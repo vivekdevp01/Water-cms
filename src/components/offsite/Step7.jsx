@@ -1,0 +1,130 @@
+import React, { useState, useEffect } from "react";
+import { Truck, Calendar, MessageSquare, Activity } from "lucide-react";
+import toast from "react-hot-toast";
+import { offsiteDispatchStep } from "../../backend/services/complaintService";
+
+const Step7 = ({ complaintId, complaint, onSuccess }) => {
+  const [plannedAt, setPlannedAt] = useState("");
+  const [status, setStatus] = useState("Pending");
+  const [remarks, setRemarks] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  /* 🔄 PREFILL (SAME PATTERN AS STEP-5 / STEP-6) */
+  useEffect(() => {
+    if (!complaint) return;
+
+    const step87 = complaint.offsite?.step87_dispatch;
+    const step86 = complaint.offsite?.step86_advance;
+
+    if (step87?.plannedAt?.toDate) {
+      // already saved
+      setPlannedAt(step87.plannedAt.toDate().toISOString().split("T")[0]);
+    } else if (step86?.actualAt?.toDate) {
+      // auto from previous step
+      const d = new Date(step86.actualAt.toDate());
+      d.setDate(d.getDate() + 1);
+      setPlannedAt(d.toISOString().split("T")[0]);
+    } else {
+      setPlannedAt("");
+    }
+
+    setStatus(step87?.status || "Pending");
+    setRemarks(step87?.remarks || "");
+  }, [complaint]);
+
+  const handleSubmit = async () => {
+    setLoading(true);
+    const toastId = toast.loading("Saving dispatch details...");
+
+    try {
+      await offsiteDispatchStep(complaintId, {
+        plannedAt, // auto OR edited
+        status,
+        remarks,
+      });
+
+      toast.success("Dispatch saved", { id: toastId });
+      onSuccess?.(); // ➜ Move to Step-8 (Repair)
+    } catch (err) {
+      console.error(err);
+      toast.error(err.message || "Failed to save dispatch", {
+        id: toastId,
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Planned Date */}
+      <div className="space-y-1">
+        <label className="text-[11px] font-bold text-slate-500 flex items-center gap-1">
+          <Calendar size={12} /> Planned Date
+        </label>
+        <input
+          type="date"
+          value={plannedAt}
+          onChange={(e) => setPlannedAt(e.target.value)}
+          className="w-full border rounded p-2 text-xs outline-none"
+        />
+      </div>
+
+      {/* Execution Status */}
+      <div className="space-y-1">
+        <label className="text-[11px] font-bold text-slate-500 flex items-center gap-1">
+          <Activity size={12} className="text-emerald-500" /> Execution Status
+        </label>
+        <select
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+          className="w-full border rounded p-2 text-xs outline-none bg-white"
+        >
+          <option value="Pending">Pending</option>
+          <option value="In Progress">In Progress</option>
+          <option value="Completed">Completed</option>
+          {/* <option value="On Hold">On Hold / Delayed</option> */}
+          {/* <option value="Cancelled">Cancelled</option> */}
+        </select>
+      </div>
+
+      {/* Remarks */}
+      <div className="space-y-1">
+        <label className="text-[11px] font-bold text-slate-500 flex items-center gap-1">
+          <MessageSquare size={12} /> Remarks
+        </label>
+        <textarea
+          rows={2}
+          value={remarks}
+          onChange={(e) => setRemarks(e.target.value)}
+          placeholder="Courier details..."
+          className="w-full border rounded p-2 text-xs outline-none"
+        />
+      </div>
+
+      {/* Submit */}
+      {/* Submit */}
+      <div className="flex flex-col items-end gap-2">
+        {status === "Pending" && (
+          <p className="text-[10px] text-amber-600 font-medium">
+            * Change status from "Pending" to enable saving
+          </p>
+        )}
+        <button
+          onClick={handleSubmit}
+          // Disable if loading OR if status is "Pending"
+          disabled={loading || status === "Pending"}
+          className={`px-4 py-2 rounded-lg text-xs font-bold text-white transition-all ${
+            loading || status === "Pending"
+              ? "bg-gray-300 cursor-not-allowed opacity-80"
+              : "bg-blue-600 hover:bg-blue-700 active:scale-95 shadow-sm"
+          }`}
+        >
+          {loading ? "Saving..." : "Confirm Store Inward"}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+export default Step7;
