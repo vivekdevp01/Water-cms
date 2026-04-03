@@ -1001,6 +1001,8 @@ const TrackPage = () => {
   const [heading, setHeading] = useState(0);
   const [status, setStatus] = useState("starting");
   const [follow, setFollow] = useState(true);
+  const [speed, setSpeed] = useState(0);
+  const [engineerInfo, setEngineerInfo] = useState(null);
 
   const prevPosRef = useRef(null);
   const animationRef = useRef(null);
@@ -1009,11 +1011,12 @@ const TrackPage = () => {
 
   // 🔥 HEADING
   const getHeading = (start, end) => {
-    return (
-      (Math.atan2(end.lng - start.lng, end.lat - start.lat) * 180) / Math.PI
-    );
+    const dy = end.lat - start.lat;
+    const dx = end.lng - start.lng;
+    const theta = Math.atan2(dx, dy);
+    let angle = (theta * 180) / Math.PI;
+    return (angle + 360) % 360;
   };
-
   // 🔥 DISTANCE (km)
   const getDistance = (a, b) => {
     const R = 6371;
@@ -1038,6 +1041,10 @@ const TrackPage = () => {
 
       const data = snap.val();
       if (!data?.lat || !data?.lng) return;
+      setEngineerInfo({
+        name: data.engineerName,
+        phone: data.engineerPhone,
+      });
 
       const newPos = { lat: data.lat, lng: data.lng };
 
@@ -1051,6 +1058,10 @@ const TrackPage = () => {
       const end = newPos;
 
       const distance = getDistance(start, end);
+      const timeDiff = 1;
+      const speedKmh = (distance / timeDiff) * 3600;
+
+      setSpeed(speedKmh.toFixed(1));
 
       // 🔥 SPEED DETECTION
       if (distance < 0.005) {
@@ -1076,7 +1087,10 @@ const TrackPage = () => {
         if (!startTime) startTime = time;
         const progress = Math.min((time - startTime) / duration, 1);
 
-        const ease = progress * (2 - progress);
+        const ease =
+          progress < 0.5
+            ? 2 * progress * progress
+            : 1 - Math.pow(-2 * progress + 2, 2) / 2;
 
         const lat = start.lat + (end.lat - start.lat) * ease;
         const lng = start.lng + (end.lng - start.lng) * ease;
@@ -1085,7 +1099,7 @@ const TrackPage = () => {
         setEngineerPos(pos);
 
         // 🔥 SMOOTH CAMERA FOLLOW
-        if (follow) {
+        if (follow && progress > 0.8) {
           mapRef.current?.panTo(pos);
         }
 
@@ -1137,6 +1151,39 @@ const TrackPage = () => {
 
     return () => unsub();
   }, [complaintId]);
+  useEffect(() => {
+    if (!mapRef.current || !engineerPos) return;
+
+    if (follow) {
+      mapRef.current.setZoom(17);
+      mapRef.current.panTo(engineerPos);
+    }
+  }, [engineerPos, follow]);
+  // 🔥 GOOGLE MAPS AUTO-ZOOM (FITS BOTH MARKERS)
+  // useEffect(() => {
+  //   if (mapRef.current && engineerPos && customerPos) {
+  //     const bounds = new window.google.maps.LatLngBounds();
+  //     bounds.extend(
+  //       new window.google.maps.LatLng(engineerPos.lat, engineerPos.lng),
+  //     );
+  //     bounds.extend(
+  //       new window.google.maps.LatLng(customerPos.lat, customerPos.lng),
+  //     );
+  //     mapRef.current.fitBounds(bounds, 100); // 100px padding
+  //   }
+  // }, [engineerPos, customerPos]);
+  const zoomDoneRef = useRef(false);
+
+  useEffect(() => {
+    if (mapRef.current && engineerPos && customerPos && !zoomDoneRef.current) {
+      const bounds = new window.google.maps.LatLngBounds();
+      bounds.extend(engineerPos);
+      bounds.extend(customerPos);
+
+      mapRef.current.fitBounds(bounds, 100);
+      zoomDoneRef.current = true;
+    }
+  }, [engineerPos, customerPos]);
 
   // 🛣 ROUTE + ETA
   useEffect(() => {
@@ -1154,6 +1201,7 @@ const TrackPage = () => {
         origin: engineerPos,
         destination: customerPos,
         travelMode: window.google.maps.TravelMode.DRIVING,
+        provideRouteAlternatives: true,
       },
       (res, status) => {
         if (status === "OK") {
@@ -1179,18 +1227,44 @@ const TrackPage = () => {
     <LoadScript googleMapsApiKey="AIzaSyAIR5LlBpyyui16nwIiuABaba3u-18g3Z8">
       <GoogleMap
         mapContainerStyle={containerStyle}
-        zoom={15}
+        // zoom={15}
+        options={{
+          disableDefaultUI: true,
+          zoomControl: true,
+          // styles: darkMapStyle,
+        }}
         center={engineerPos || customerPos}
         onLoad={(map) => (mapRef.current = map)}
       >
         {/* 🚗 REAL CAR ICON */}
         {engineerPos && (
+          // <Marker
+          //   position={engineerPos}
+          //   // icon={{
+          //   //   url: "https://cdn-icons-png.flaticon.com/512/744/744465.png",
+          //   //   scaledSize: new window.google.maps.Size(40, 40),
+          //   //   anchor: new window.google.maps.Point(20, 20),
+          //   // }}
+          //   icon={{
+          //     path: "M23.5,17h-1.5V4.5c0-1.38-1.12-2.5-2.5-2.5h-15C3.12,2,2,3.12,2,4.5V17H0.5c-0.28,0-0.5,0.22-0.5,0.5v1 c0,0.28,0.22,0.5,0.5,0.5h23c0.28,0,0.5-0.22,0.5-0.5v-1C24,17.22,23.78,17,23.5,17z M7,12c-0.55,0-1-0.45-1-1s0.45-1,1-1s1,0.45,1,1 S7.55,12,7,12z M17,12c-0.55,0-1-0.45-1-1s0.45-1,1-1s1,0.45,1,1S17.55,12,17,12z",
+          //     fillColor: "#1d4ed8",
+          //     fillOpacity: 1,
+          //     strokeWeight: 1,
+          //     scale: 1.5,
+          //     rotation: heading, // Rotates the car based on movement
+          //     anchor: new window.google.maps.Point(12, 12),
+          //   }}
+          // />
           <Marker
             position={engineerPos}
             icon={{
-              url: "https://cdn-icons-png.flaticon.com/512/744/744465.png",
-              scaledSize: new window.google.maps.Size(40, 40),
-              anchor: new window.google.maps.Point(20, 20),
+              path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+              scale: 6,
+              fillColor: "#2563eb",
+              fillOpacity: 1,
+              strokeColor: "#ffffff",
+              strokeWeight: 2,
+              rotation: heading,
             }}
           />
         )}
@@ -1198,46 +1272,208 @@ const TrackPage = () => {
         {/* 🏠 CUSTOMER */}
         {customerPos && <Marker position={customerPos} />}
 
-        {directions && <DirectionsRenderer directions={directions} />}
+        {/* {directions && (
+          <DirectionsRenderer
+            directions={directions}
+            options={{ preserveViewport: true }}
+          />
+        )} */}
+        {directions?.routes?.map((route, i) => (
+          <DirectionsRenderer
+            key={i}
+            directions={{ ...directions, routes: [route] }}
+            options={{
+              polylineOptions: {
+                strokeColor: i === 0 ? "#2563eb" : "#9ca3af",
+                strokeWeight: 5,
+              },
+            }}
+          />
+        ))}
+        {engineerInfo && (
+          <div
+            style={{
+              position: "absolute",
+              top: 15,
+              left: "50%",
+              transform: "translateX(-50%)",
+              background: "rgba(255,255,255,0.95)",
+              backdropFilter: "blur(8px)",
+              padding: "12px 16px",
+              borderRadius: "14px",
+              boxShadow: "0 6px 20px rgba(0,0,0,0.15)",
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+            }}
+          >
+            <div
+              style={{
+                width: "40px",
+                height: "40px",
+                borderRadius: "50%",
+                background: "#2563eb",
+                color: "white",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              👨‍🔧
+            </div>
+
+            <div>
+              <div style={{ fontWeight: "bold" }}>{engineerInfo.name}</div>
+              <div style={{ fontSize: "13px", color: "#555" }}>
+                {engineerInfo.phone}
+              </div>
+            </div>
+
+            <a href={`tel:${engineerInfo.phone}`}>
+              <button
+                style={{
+                  background: "#16a34a",
+                  color: "white",
+                  border: "none",
+                  padding: "6px 10px",
+                  borderRadius: "8px",
+                }}
+              >
+                Call
+              </button>
+            </a>
+          </div>
+        )}
+        <button
+          onClick={() => {
+            setFollow(true);
+            mapRef.current?.panTo(engineerPos);
+            mapRef.current?.setZoom(17);
+          }}
+        >
+          🚗 Focus
+        </button>
 
         {/* 📦 STATUS CARD */}
         {eta && (
           <div style={cardStyle}>
-            <h3>
+            <h3 style={{ marginBottom: "5px" }}>
               {status === "arrived"
                 ? "✅ Arrived"
                 : status === "nearby"
                   ? "📍 Nearby"
                   : status === "moving"
-                    ? "🚗 Moving"
+                    ? "🚗 On the way"
                     : "⏸ Stopped"}
             </h3>
-            <p>⏱ {eta.duration}</p>
-            <p>📍 {eta.distance}</p>
+
+            <p style={{ fontSize: "18px", fontWeight: "bold" }}>
+              ⏱ {eta.duration}
+            </p>
+
+            <p style={{ color: "#555" }}>📍 {eta.distance}</p>
+
+            <div style={{ marginTop: "8px", fontSize: "14px" }}>
+              🚀 Speed: <b>{speed} km/h</b>
+            </div>
           </div>
+        )}
+        {customerPos && (
+          <a
+            href={`https://www.google.com/maps/dir/?api=1&destination=${customerPos.lat},${customerPos.lng}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              position: "absolute",
+              bottom: 145,
+              left: "50%",
+              transform: "translateX(-50%)",
+              background: "#2563eb",
+              color: "white",
+              padding: "10px 15px",
+              borderRadius: "10px",
+              textDecoration: "none",
+              fontWeight: "bold",
+            }}
+          >
+            🗺 Open in Google Maps
+          </a>
         )}
       </GoogleMap>
 
-      <button
-        style={{ position: "absolute", top: 20, right: 20 }}
+      {/* <button
+        style={{
+          position: "absolute",
+          top: 20,
+          right: 20,
+          background: follow ? "#2563eb" : "white",
+          color: follow ? "white" : "black",
+          borderRadius: "20px",
+          padding: "8px 12px",
+          border: "none",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+        }}
         onClick={() => setFollow(!follow)}
       >
         {follow ? "🧭 Following" : "📍 Follow"}
+      </button> */}
+      <button
+        style={{
+          position: "absolute",
+          top: 20,
+          left: 20,
+          background: "white",
+          borderRadius: "50%",
+          width: "45px",
+          height: "45px",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+          border: "none",
+          fontSize: "18px",
+        }}
+        onClick={() => {
+          if (mapRef.current && engineerPos) {
+            mapRef.current.panTo(engineerPos);
+            mapRef.current.setZoom(17); // 🔥 important
+          }
+        }}
+      >
+        🎯 Recenter
       </button>
+      {/* options={{
+  styles: darkMapStyle
+}} */}
     </LoadScript>
   );
 };
 
 const cardStyle = {
   position: "absolute",
-  bottom: 30,
+  bottom: 20,
   left: "50%",
   transform: "translateX(-50%)",
-  background: "white",
-  padding: "15px",
-  borderRadius: "12px",
-  boxShadow: "0 4px 10px rgba(0,0,0,0.2)",
-  textAlign: "center",
+  background: "rgba(255,255,255,0.9)",
+  backdropFilter: "blur(10px)",
+  padding: "18px",
+  borderRadius: "16px",
+  boxShadow: "0 10px 30px rgba(0,0,0,0.2)",
+  width: "90%",
+  maxWidth: "340px",
+  textAlign: "left",
 };
+const darkMapStyle = [
+  { elementType: "geometry", stylers: [{ color: "#1f2937" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#9ca3af" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#111827" }] },
+  {
+    featureType: "road",
+    elementType: "geometry",
+    stylers: [{ color: "#374151" }],
+  },
+  {
+    featureType: "water",
+    elementType: "geometry",
+    stylers: [{ color: "#0ea5e9" }],
+  },
+];
 
 export default TrackPage;

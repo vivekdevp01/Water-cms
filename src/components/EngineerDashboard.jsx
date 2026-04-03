@@ -97,7 +97,14 @@ import React, { useEffect, useRef, useState } from "react";
 import { getAuth } from "firebase/auth";
 import { db, realtimeDB } from "../backend/config/firebase";
 import { ref, set, update } from "firebase/database";
-import { collection, query, where, getDocs } from "firebase/firestore";
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  getDoc,
+  doc,
+} from "firebase/firestore";
 import { MapPin, Play, Square } from "lucide-react";
 
 const EngineerDashboard = () => {
@@ -233,11 +240,14 @@ const EngineerDashboard = () => {
   //   setActiveTrackingId(null);
   //   setWatchId(null);
   // };
-  const startTracking = (complaintId) => {
+  const startTracking = async (complaintId) => {
     if (watchId !== null) return;
 
     const user = getAuth().currentUser;
     if (!user) return;
+    const engineerDoc = await getDoc(doc(db, "users", user.uid));
+    const engineerData = engineerDoc.data();
+    console.log("Engineer Data:", engineerData);
 
     console.log("Start tracking:", complaintId);
 
@@ -257,10 +267,13 @@ const EngineerDashboard = () => {
               lat: latitude,
               lng: longitude,
               engineerId: user.uid,
+              engineerName: engineerData?.name || "Unknown Engineer",
+              engineerPhone: engineerData?.phone || "N/A",
               complaintId,
               status: "on_the_way",
               updatedAt: now,
             });
+            console.log("Location updated in Realtime DB");
           }
         } catch (err) {
           console.error("Realtime DB error:", err);
@@ -272,6 +285,8 @@ const EngineerDashboard = () => {
       },
       {
         enableHighAccuracy: true,
+        maximumAge: 3000,
+        timeout: 10000,
       },
     );
 
@@ -293,27 +308,43 @@ const EngineerDashboard = () => {
   //   setWatchId(null);
   //   setActiveTrackingId(null);
   // };
+  // const stopTracking = async () => {
+  //   try {
+  //     if (watchId !== null) {
+  //       navigator.geolocation.clearWatch(watchId);
+  //     }
+
+  //     if (activeTrackingId) {
+  //       await update(ref(realtimeDB, `tracking/${activeTrackingId}`), {
+  //         status: "stopped",
+  //         updatedAt: Date.now(),
+  //       });
+  //     }
+
+  //     console.log("Tracking stopped");
+
+  //     setWatchId(null);
+  //     setActiveTrackingId(null);
+  //   } catch (err) {
+  //     console.error("Stop error:", err);
+  //   }
+  // };
   const stopTracking = async () => {
-    try {
-      if (watchId !== null) {
-        navigator.geolocation.clearWatch(watchId);
-      }
-
-      if (activeTrackingId) {
-        await update(ref(realtimeDB, `tracking/${activeTrackingId}`), {
-          status: "stopped",
-          updatedAt: Date.now(),
-        });
-      }
-
-      console.log("Tracking stopped");
-
+    if (watchId !== null) {
+      navigator.geolocation.clearWatch(watchId);
       setWatchId(null);
+    }
+
+    if (activeTrackingId) {
+      // Clean up the tracking data or set status to offline
+      await update(ref(realtimeDB, `tracking/${activeTrackingId}`), {
+        status: "offline",
+        updatedAt: Date.now(),
+      });
       setActiveTrackingId(null);
-    } catch (err) {
-      console.error("Stop error:", err);
     }
   };
+
   useEffect(() => {
     const fetchComplaints = async () => {
       const user = getAuth().currentUser;
